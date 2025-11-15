@@ -1,0 +1,122 @@
+2025-11-15 16:22:17,678 - api_server - INFO - 正在初始化Coze聊天机器人API服务器...
+2025-11-15 16:22:17,804 - api_server - INFO - Coze聊天机器人API服务器初始化完成
+2025-11-15 16:22:17,805 - api_server - INFO - 当前Bot ID: 7556487944182169641
+2025-11-15 16:22:17,805 - api_server - INFO - 服务器配置: {'host': '0.0.0.0', 'port': 8000, 'debug': False, 'allowed_origins': ['*'], 'max_request_size': 10485760}
+2025-11-15 16:22:18,569 - api_server - INFO - 同步聊天请求 - session_id: session_d255df8a4540, user_id: user_demo_10086, message: 我是一名学生，最近考试压力很大，晚上睡不着觉，该怎么调节？...
+2025-11-15 16:22:31,434 - api_server - INFO - 同步聊天响应 - session_id: session_d255df8a4540, conv_id: 757286459715015..., response: (｡･∀･)ﾉﾞ嗨 亲爱的同学～听到你因为考试压力大而失眠，我真的很心疼你呢 😔
+
+作为一名学生，面...
+2025-11-15 16:22:31,442 - api_server - INFO - 流式聊天请求 - session_id: session_d255df8a4540, user_id: user_demo_10086, conv_id: 757286459715015, message: 你能具体说说时间管理的方法吗？比如怎么平衡复习和休息？...
+2025-11-15 16:22:31,449 - api_server - INFO - 流式聊天 - 手动绑定会话ID: 757286459715015...
+2025-11-15 16:22:50,612 - api_server - INFO - 流式聊天完成 - session_id: session_d255df8a4540, conv_id: 757286459715015..., total_chunks: 316
+2025-11-15 16:22:50,616 - api_server - INFO - 会话绑定成功 - session_id: session_d255df8a4540, conversation_id: 757286459715015...
+2025-11-15 16:22:50,627 - api_server - INFO - 会话清除成功 - session_id: session_d255df8a4540, conv_id: 757286459715015
+2025-11-15 16:22:50,636 - api_server - INFO - 同步聊天 - 手动传入会话ID: invalid_123...
+2025-11-15 16:22:50,636 - api_server - INFO - 同步聊天请求 - session_id: session_1cb8b5fe1460, user_id: user_demo_10086, message: 测试无效会话ID...
+2025-11-15 16:22:51,635 - api_server - ERROR - 同步聊天处理失败: 
+❌ 创建Chat失败！
+错误类型: Exception
+错误描述: 创建Chat失败：code=4000, msg=The field conversation_id=invalid_123 provided is not a valid int64. Please check your input.
+异常堆栈:
+Traceback (most recent call last):
+  File "D:\hku\NLP\project\Health-Agent\mental\coze_api_client.py", line 95, in _handle_request_errors
+    yield
+  File "D:\hku\NLP\project\Health-Agent\mental\coze_api_client.py", line 263, in send_message_sync
+    raise Exception(f"创建Chat失败：code={result['code']}, msg={result['msg']}")
+Exception: 创建Chat失败：code=4000, msg=The field conversation_id=invalid_123 provided is not a valid int64. Please check your input.
+Traceback (most recent call last):
+  File "D:\hku\NLP\project\Health-Agent\mental\coze_api_client.py", line 95, in _handle_request_errors
+    yield
+  File "D:\hku\NLP\project\Health-Agent\mental\coze_api_client.py", line 263, in send_message_sync
+    raise Exception(f"创建Chat失败：code={result['code']}, msg={result['msg']}")
+Exception: 创建Chat失败：code=4000, msg=The field conversation_id=invalid_123 provided is not a valid int64. Please check your input.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "D:\hku\NLP\project\Health-Agent\mental\api_server.py", line 188, in chat
+    response_text = coze_client.send_message_sync(message=request.message)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\hku\NLP\project\Health-Agent\mental\coze_api_client.py", line 247, in send_message_sync
+    with self._handle_request_errors(
+  File "D:\anaconda\Lib\contextlib.py", line 155, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "D:\hku\NLP\project\Health-Agent\mental\coze_api_client.py", line 121, in _handle_request_errors
+    raise Exception(error_msg)
+Exception: 
+❌ 创建Chat失败！
+错误类型: Exception
+错误描述: 创建Chat失败：code=4000, msg=The field conversation_id=invalid_123 provided is not a valid int64. Please check your input.
+异常堆栈:
+Traceback (most recent call last):
+  File "D:\hku\NLP\project\Health-Agent\mental\coze_api_client.py", line 95, in _handle_request_errors
+    yield
+  File "D:\hku\NLP\project\Health-Agent\mental\coze_api_client.py", line 263, in send_message_sync
+    raise Exception(f"创建Chat失败：code={result['code']}, msg={result['msg']}")
+Exception: 创建Chat失败：code=4000, msg=The field conversation_id=invalid_123 provided is not a valid int64. Please check your input.
+
+2025-11-15 16:27:01,927 - api_server - INFO - 正在初始化Coze聊天机器人API服务器...
+2025-11-15 16:27:02,038 - api_server - INFO - Coze聊天机器人API服务器初始化完成
+2025-11-15 16:27:02,038 - api_server - INFO - 当前Bot ID: 7556487944182169641
+2025-11-15 16:27:02,038 - api_server - INFO - 服务器配置: {'host': '0.0.0.0', 'port': 6000, 'debug': False, 'allowed_origins': ['*'], 'max_request_size': 10485760}
+2025-11-15 16:27:02,805 - api_server - INFO - 同步聊天请求 - session_id: session_bc4b1ed94c26, user_id: user_demo_10086, message: 我是一名学生，最近考试压力很大，晚上睡不着觉，该怎么调节？...
+2025-11-15 16:27:53,861 - api_server - INFO - 同步聊天响应 - session_id: session_bc4b1ed94c26, conv_id: 757286581994948..., response: (｡･∀･)ﾉﾞ嗨 亲爱的同学～ 🫂
+
+听到你说最近考试压力很大，晚上都睡不着觉，我真的很能理解你的...
+2025-11-15 16:28:28,828 - api_server - INFO - 正在初始化Coze聊天机器人API服务器...
+2025-11-15 16:28:28,961 - api_server - INFO - Coze聊天机器人API服务器初始化完成
+2025-11-15 16:28:28,961 - api_server - INFO - 当前Bot ID: 7556487944182169641
+2025-11-15 16:28:28,961 - api_server - INFO - 服务器配置: {'host': '0.0.0.0', 'port': 6000, 'debug': False, 'allowed_origins': ['*'], 'max_request_size': 10485760}
+2025-11-15 16:28:29,717 - api_server - INFO - 同步聊天请求 - session_id: session_b18a408eb5d9, user_id: user_demo_10086, message: 我是一名学生，最近考试压力很大，晚上睡不着觉，该怎么调节？...
+2025-11-15 16:28:45,103 - api_server - INFO - 同步聊天响应 - session_id: session_b18a408eb5d9, conv_id: 757286619207602..., response: (｡･∀･)ﾉﾞ嗨 亲爱的同学～ 😊
+
+我能感受到你现在面临着很大的考试压力，晚上睡不着觉确实很让人...
+2025-11-15 16:28:45,110 - api_server - INFO - 流式聊天请求 - session_id: session_b18a408eb5d9, user_id: user_demo_10086, conv_id: 757286619207602, message: 你能具体说说时间管理的方法吗？比如怎么平衡复习和休息？...
+2025-11-15 16:28:45,117 - api_server - INFO - 流式聊天 - 手动绑定会话ID: 757286619207602...
+2025-11-15 16:29:07,824 - api_server - INFO - 流式聊天完成 - session_id: session_b18a408eb5d9, conv_id: 757286619207602..., total_chunks: 435
+2025-11-15 16:29:07,829 - api_server - INFO - 会话绑定成功 - session_id: session_b18a408eb5d9, conversation_id: 757286619207602...
+2025-11-15 16:29:07,838 - api_server - INFO - 会话清除成功 - session_id: session_b18a408eb5d9, conv_id: 757286619207602
+2025-11-15 16:29:07,847 - api_server - INFO - 同步聊天 - 手动传入会话ID: invalid_123...
+2025-11-15 16:29:07,847 - api_server - INFO - 同步聊天请求 - session_id: session_9f04c5528c7b, user_id: user_demo_10086, message: 测试无效会话ID...
+2025-11-15 16:29:10,718 - api_server - ERROR - 同步聊天处理失败: 
+❌ 创建Chat失败！
+错误类型: Exception
+错误描述: 创建Chat失败：code=4000, msg=The field conversation_id=invalid_123 provided is not a valid int64. Please check your input.
+异常堆栈:
+Traceback (most recent call last):
+  File "D:\hku\NLP\project\Health-Agent\mental\coze_api_client.py", line 95, in _handle_request_errors
+    yield
+  File "D:\hku\NLP\project\Health-Agent\mental\coze_api_client.py", line 263, in send_message_sync
+    raise Exception(f"创建Chat失败：code={result['code']}, msg={result['msg']}")
+Exception: 创建Chat失败：code=4000, msg=The field conversation_id=invalid_123 provided is not a valid int64. Please check your input.
+Traceback (most recent call last):
+  File "D:\hku\NLP\project\Health-Agent\mental\coze_api_client.py", line 95, in _handle_request_errors
+    yield
+  File "D:\hku\NLP\project\Health-Agent\mental\coze_api_client.py", line 263, in send_message_sync
+    raise Exception(f"创建Chat失败：code={result['code']}, msg={result['msg']}")
+Exception: 创建Chat失败：code=4000, msg=The field conversation_id=invalid_123 provided is not a valid int64. Please check your input.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "D:\hku\NLP\project\Health-Agent\mental\api_server.py", line 188, in chat
+    response_text = coze_client.send_message_sync(message=request.message)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\hku\NLP\project\Health-Agent\mental\coze_api_client.py", line 247, in send_message_sync
+    with self._handle_request_errors(
+  File "D:\anaconda\Lib\contextlib.py", line 155, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "D:\hku\NLP\project\Health-Agent\mental\coze_api_client.py", line 121, in _handle_request_errors
+    raise Exception(error_msg)
+Exception: 
+❌ 创建Chat失败！
+错误类型: Exception
+错误描述: 创建Chat失败：code=4000, msg=The field conversation_id=invalid_123 provided is not a valid int64. Please check your input.
+异常堆栈:
+Traceback (most recent call last):
+  File "D:\hku\NLP\project\Health-Agent\mental\coze_api_client.py", line 95, in _handle_request_errors
+    yield
+  File "D:\hku\NLP\project\Health-Agent\mental\coze_api_client.py", line 263, in send_message_sync
+    raise Exception(f"创建Chat失败：code={result['code']}, msg={result['msg']}")
+Exception: 创建Chat失败：code=4000, msg=The field conversation_id=invalid_123 provided is not a valid int64. Please check your input.
+
