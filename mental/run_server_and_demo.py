@@ -22,7 +22,7 @@ init(autoreset=True)
 
 # ==================== 配置项（对接同学可按需修改）====================
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 6000
+DEFAULT_PORT = 6001
 API_BASE_URL = f"http://{DEFAULT_HOST}:{DEFAULT_PORT}"
 # 测试用户信息（模拟真实用户）
 TEST_USER_ID = "user_demo_10086"

@@ -120,3 +120,9 @@ Traceback (most recent call last):
     raise Exception(f"创建Chat失败：code={result['code']}, msg={result['msg']}")
 Exception: 创建Chat失败：code=4000, msg=The field conversation_id=invalid_123 provided is not a valid int64. Please check your input.
 
+2025-11-15 16:32:00,373 - api_server - INFO - 正在初始化Coze聊天机器人API服务器...
+2025-11-15 16:32:00,488 - api_server - INFO - Coze聊天机器人API服务器初始化完成
+2025-11-15 16:32:00,488 - api_server - INFO - 当前Bot ID: 7556487944182169641
+2025-11-15 16:32:00,488 - api_server - INFO - 服务器配置: {'host': '0.0.0.0', 'port': 6000, 'debug': False, 'allowed_origins': ['*'], 'max_request_size': 10485760}
+2025-11-15 16:43:17,524 - api_server - INFO - 正在关闭Coze聊天机器人API服务器...
+2025-11-15 16:43:17,524 - api_server - INFO - Coze聊天机器人API服务器已关闭
