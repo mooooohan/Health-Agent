@@ -566,7 +566,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "api_server:app",
         host=SERVER_CONFIG.get("host", "0.0.0.0"),
-        port=SERVER_CONFIG.get("port", 6000),
+        port=SERVER_CONFIG.get("port", 6001),
         reload=SERVER_CONFIG.get("debug", False),
         log_level=SERVER_CONFIG.get("log_level", "info"),
         access_log=True

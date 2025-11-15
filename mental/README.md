@@ -63,10 +63,10 @@ CN域名与端点：
 python api_server.py
 
 # 或使用uvicorn直接启动
-uvicorn api_server:app --host 0.0.0.0 --port 6000 --reload
+uvicorn api_server:app --host 0.0.0.0 --port 6001 --reload
 ```
 
-服务启动后，访问 http://localhost:6000/docs 查看API文档。
+服务启动后，访问 http://localhost:6001/docs 查看API文档。
 
 ## 📋 API使用指南
 
@@ -78,7 +78,7 @@ import requests
 
 # 发送聊天消息
 response = requests.post(
-    "http://localhost:6000/chat",
+    "http://localhost:6001/chat",
     json={
         "user_id": "user123",
         "message": "我今天感觉很焦虑",
@@ -99,7 +99,7 @@ import json
 
 # 流式响应
 response = requests.post(
-    "http://localhost:6000/chat/stream",
+    "http://localhost:6001/chat/stream",
     json={
         "user_id": "user123",
         "message": "我今天感觉很焦虑",
@@ -154,7 +154,7 @@ def on_open(ws):
     ws.send(json.dumps(message))
 
 ws = websocket.WebSocketApp(
-    "ws://localhost:6000/ws/chat",
+    "ws://localhost:6001/ws/chat",
     on_message=on_message,
     on_open=on_open
 )
@@ -164,24 +164,24 @@ ws.run_forever()
 ### 会话管理
 ```python
 # 获取会话信息
-response = requests.get("http://localhost:6000/session/session123")
+response = requests.get("http://localhost:6001/session/session123")
 session_info = response.json()
 print(f"会话状态: {session_info}")
 
 # 关闭会话
-response = requests.post("http://localhost:6000/session/session123/close")
+response = requests.post("http://localhost:6001/session/session123/close")
 print(f"关闭结果: {response.json()}")
 ```
 
 ### 用户统计
 ```python
 # 获取用户统计
-response = requests.get("http://localhost:6000/user/user123/stats")
+response = requests.get("http://localhost:6001/user/user123/stats")
 user_stats = response.json()
 print(f"用户统计: {user_stats}")
 
 # 获取记忆统计
-response = requests.get("http://localhost:6000/user/user123/memories")
+response = requests.get("http://localhost:6001/user/user123/memories")
 memory_stats = response.json()
 print(f"记忆统计: {memory_stats}")
 ```
@@ -243,7 +243,7 @@ DATABASE_CONFIG = {
 ```python
 SERVER_CONFIG = {
     "host": "0.0.0.0",
-    "port": 8000,
+    "port": 6001,
     "debug": False,
     "allowed_origins": ["*"]
 }
@@ -310,7 +310,7 @@ RUN pip install -r requirements.txt
 
 COPY . .
 
-EXPOSE 8000
+EXPOSE 6001
 
 CMD ["python", "api_server.py"]
 ```
@@ -323,7 +323,7 @@ docker build -t psychology-chatbot .
 # 运行容器
 docker run -d \
   --name psychology-chatbot \
-  -p 6000:6000 \
+  -p 6001:6001 \
   -e COZE_BOT_ID=your_bot_id \
   -e COZE_USER_ID=your_user_id \
   -e COZE_API_KEY=your_api_key \
@@ -342,7 +342,7 @@ docker run -d \
 ### 健康检查
 ```bash
 # 检查服务健康状态
-curl http://localhost:6000/health
+curl http://localhost:6001/health
 ```
 
 ### 性能监控

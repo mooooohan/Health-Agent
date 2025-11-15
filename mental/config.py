@@ -25,7 +25,7 @@ COZE_CONFIG = {
 # 服务器配置（与.env联动，支持环境变量覆盖）
 SERVER_CONFIG = {
     'host': os.getenv('SERVER_HOST', '0.0.0.0'),  # 监听地址（默认所有网卡）
-    'port': int(os.getenv('SERVER_PORT', 6000)),  # 端口（默认6000）
+    'port': int(os.getenv('SERVER_PORT', 6001)),  # 端口（默认6001）
     'debug': os.getenv('DEBUG', 'false').lower() == 'true',  # 调试模式
     'allowed_origins': ['*'],  # CORS允许的源（生产环境建议指定具体域名）
     'max_request_size': 10 * 1024 * 1024,  # 最大请求大小（10MB）

@@ -18,8 +18,8 @@
 ### 基础信息
 
 - **版本**: 1.1.0
-- **基础URL**: `http://localhost:6000`
-- **API文档**: `http://localhost:6000/docs`
+- **基础URL**: `http://localhost:6001`
+- **API文档**: `http://localhost:6001/docs`
 - **协议**: HTTP/1.1 + SSE
 - **数据格式**: JSON
 
@@ -48,7 +48,7 @@ COZE_BASE_URL=https://api.coze.cn/v3
 
 # 服务器配置
 SERVER_HOST=0.0.0.0
-SERVER_PORT=6000
+SERVER_PORT=6001
 DEBUG=false
 ```
 
@@ -59,13 +59,13 @@ DEBUG=false
 python api_server.py
 
 # 或使用uvicorn直接启动
-uvicorn api_server:app --host 0.0.0.0 --port 6000 --reload
+uvicorn api_server:app --host 0.0.0.0 --port 6001 --reload
 ```
 
 ### 4. 健康检查
 
 ```bash
-curl http://localhost:6000/health   
+curl http://localhost:6001/health   
 ```
 
 ---
@@ -142,7 +142,7 @@ Content-Type: application/json
 - **curl示例**:
 
 ```bash
-curl -X POST "http://localhost:6000/chat" \
+curl -X POST "http://localhost:6001/chat" \
      -H "Content-Type: application/json" \
      -d '{
        "message": "你好，我想聊聊最近的心情",
@@ -169,7 +169,7 @@ data: {"type": "complete", "data": {"total_chunks": 3, "full_content": "我理�
 - **curl示例**:
 
 ```bash
-curl -X POST "http://localhost:6000/chat/stream" \
+curl -X POST "http://localhost:6001/chat/stream" \
      -H "Content-Type: application/json" \
      -d '{"message": "能给我一些缓解压力的建议吗？"}' \
      --no-buffer
@@ -202,7 +202,7 @@ curl -X POST "http://localhost:6000/chat/stream" \
 - **curl示例**:
 
 ```bash
-curl "http://localhost:6000/session/my_session/info"
+curl "http://localhost:6001/session/my_session/info"
 ```
 
 #### 3.2 清除会话
@@ -225,7 +225,7 @@ curl "http://localhost:6000/session/my_session/info"
 - **curl示例**:
 
 ```bash
-curl -X POST "http://localhost:6000/session/my_session/clear"
+curl -X POST "http://localhost:6001/session/my_session/clear"
 ```
 
 ---
@@ -239,7 +239,7 @@ import requests
 import json
 
 class CozeChatClient:
-    def __init__(self, base_url="http://localhost:6000"):
+    def __init__(self, base_url="http://localhost:6001"):
         self.base_url = base_url
     
     def chat_sync(self, message, session_id=None):
@@ -364,7 +364,7 @@ async function streamChat(message) {
 | `COZE_USER_ID` | 用户标识 | `default_user` | ❌ |
 | `COZE_BASE_URL` | API基础地址 | `https://api.coze.cn/v3` | ❌ |
 | `SERVER_HOST` | 服务器监听地址 | `0.0.0.0` | ❌ |
-| `SERVER_PORT` | 服务器端口 | `6000` | ❌ |
+| `SERVER_PORT` | 服务器端口 | `6001` | ❌ |
 | `DEBUG` | 调试模式 | `false` | ❌ |
 
 ### 服务器配置
@@ -372,7 +372,7 @@ async function streamChat(message) {
 ```python
 SERVER_CONFIG = {
     'host': '0.0.0.0',           # 监听所有网卡
-    'port': 6000,                # 端口号
+    'port': 6001,                # 端口号
     'debug': False,              # 调试模式
     'allowed_origins': ['*'],    # CORS允许源
     'max_request_size': 10485760 # 最大请求大小(10MB)
@@ -515,8 +515,8 @@ response = requests.post(url, json=data, stream=True, timeout=None)
 
 ## 技术支持
 
-- **API文档**: `http://localhost:6000/docs`
-- **健康检查**: `http://localhost:6000/health`
+- **API文档**: `http://localhost:6001/docs`
+- **健康检查**: `http://localhost:6001/health`
 - **日志文件**: `logs/api_server.log`
 - **配置示例**: `.env.example`
 
