@@ -4,38 +4,44 @@ import platform
 import subprocess
 import tempfile
 import uuid
+import sys
 from datetime import datetime
 from typing import Optional
 
 import requests
 
+sys.stdout.reconfigure(encoding="utf-8")
+
+# === ★ 新增：UTF-8 乱码修复函数 ===
+def fix_utf8_garbled(s: str) -> str:
+    try:
+        return s.encode("latin1").decode("utf-8")
+    except:
+        return s
+
+
 # === 1️⃣ Coze API 配置 ===
 API_KEY = os.getenv("COZE_API_KEY", "pat_DyjwNAuK4thhVGMDE7WusSNFPFYwfiEEwYOs7WbOoZ9QJjNpXoQXPkNERk2Ld2aO")
-BOT_ID = "7559087768224432170"  # 你的 Coze Agent ID
+BOT_ID = "7559087768224432170"
 BASE_URL = "https://api.coze.cn/open_api/v2/chat"
 
-# === 🔊 语音合成配置（沿用 Coze 语音 API）===
+# === 🔊 语音合成配置 ===
 VOICE_ID = os.getenv("COZE_VOICE_ID", "7468512265151692827")
 SPEECH_URL = "https://api.coze.cn/v1/audio/speech"
 
-# === 2️⃣ 请求头 ===
+# === 2️⃣ HTTP 头 ===
 headers = {
     "Content-Type": "application/json",
     "Authorization": f"Bearer {API_KEY}"
 }
 
-# === 3️⃣ 生成唯一会话ID（多轮对话保持一致） ===
-conversation_id = str(uuid.uuid4())  # 每次启动脚本生成新的会话ID，可改为固定值保持长期记忆
+# === 3️⃣ 会话 & 历史 ===
+conversation_id = str(uuid.uuid4())   # 本次脚本运行内保持不变
+chat_history = []  # 用于传给 Coze 的对话历史（真正让模型有记忆）
 
-# === 🧠 新增：全局缓存用户个人信息 ===
-user_profile = {
-    "context": ""
-}
 
-# === 4️⃣ 语音合成相关 ===
+# === 4️⃣ 语音播放 ===
 def _auto_play_audio(file_path: str) -> bool:
-    """Try to play the generated audio automatically on the current OS."""
-
     def try_command(command):
         try:
             subprocess.run(command, check=False)
@@ -44,12 +50,8 @@ def _auto_play_audio(file_path: str) -> bool:
             return False
 
     system = platform.system()
-
     if system == "Darwin":
-        if try_command(["afplay", file_path]):
-            print("🎵 正在自动播放音频...")
-            return True
-        if try_command(["open", file_path]):
+        if try_command(["afplay", file_path]) or try_command(["open", file_path]):
             print("🎵 正在自动播放音频...")
             return True
     elif system == "Windows":
@@ -69,7 +71,6 @@ def _auto_play_audio(file_path: str) -> bool:
 
 
 def synthesize_speech(text: str, output_file: Optional[str] = None) -> None:
-    """Call Coze speech API and auto play reply audio without persisting files."""
     clean_text = text.strip()
     if not clean_text:
         return
@@ -106,10 +107,12 @@ def synthesize_speech(text: str, output_file: Optional[str] = None) -> None:
 
         with open(target_path, "wb") as f:
             f.write(response.content)
+
         if output_file:
             print(f"🎧 音频已保存：{output_file}")
         else:
             print("🎧 临时音频已生成，正在播放...")
+
     except OSError as exc:
         print(f"⚠️ 写入音频文件失败：{exc}")
         if temp_path:
@@ -131,36 +134,52 @@ def synthesize_speech(text: str, output_file: Optional[str] = None) -> None:
             print(f"⚠️ 无法删除临时音频文件：{exc}")
 
 
-# === 5️⃣ 发送对话函数 ===
+# === 5️⃣ 发送对话 ===
 def call_agent(user_input, stream=True):
-    global user_profile
+    global chat_history
 
-    # === 检测是否包含用户个人信息关键词 ===
-    keywords = ["year", "old", "sleep", "stress", "male", "female", "woman", "man"]
-    if any(k in user_input.lower() for k in keywords):
-        user_profile["context"] = user_input
-
-    if user_profile["context"] and not any(k in user_input.lower() for k in keywords):
-        full_input = user_profile["context"] + " " + user_input
-    else:
-        full_input = user_input
+    chat_history.append({
+        "role": "user",
+        "content": user_input,
+        "content_type": "text",
+    })
 
     base_payload = {
         "conversation_id": conversation_id,
         "bot_id": BOT_ID,
         "user": "Miya",
-        "query": full_input,
+        "query": user_input,
+        "chat_history": chat_history,
     }
 
     if stream:
         ok, reply_or_error = _stream_agent_response({**base_payload, "stream": True})
         if ok:
+            chat_history.append({
+                "role": "assistant",
+                "content": reply_or_error,
+                "content_type": "text",
+            })
             return reply_or_error, True
+
         print("⚠️ 流式输出失败，改用普通模式。\n")
         fallback = _request_agent_response({**base_payload, "stream": False})
+        if not str(fallback).startswith("❌"):
+            chat_history.append({
+                "role": "assistant",
+                "content": fallback,
+                "content_type": "text",
+            })
         return fallback, False
 
-    return _request_agent_response({**base_payload, "stream": False}), False
+    reply = _request_agent_response({**base_payload, "stream": False})
+    if not str(reply).startswith("❌"):
+        chat_history.append({
+            "role": "assistant",
+            "content": reply,
+            "content_type": "text",
+        })
+    return reply, False
 
 
 def _request_agent_response(payload):
@@ -172,23 +191,14 @@ def _request_agent_response(payload):
         res = response.json()
         messages = res.get("messages", [])
 
-        if os.getenv("DEBUG_Coze", "0") == "1":
-            print("\n[DEBUG] Full response JSON:")
-            print(json.dumps(res, indent=2, ensure_ascii=False))
-            print("\n")
-
         for msg in messages:
             if msg.get("type") == "answer":
                 content = msg.get("content", "").strip()
-                if content:
-                    return content
+                # === ★ 修复 emoji 乱码 ===
+                return fix_utf8_garbled(content)
 
-        return "⚠️ Agent didn’t return a message. This may happen if the model timed out or your input triggered a filter."
+        return "⚠️ Agent didn’t return a message."
 
-    except requests.exceptions.RequestException as e:
-        return f"❌ Network error: {e}"
-    except json.JSONDecodeError:
-        return f"❌ Response JSON parse error: {response.text[:200]}"
     except Exception as e:
         return f"❌ Unexpected error: {e}"
 
@@ -202,7 +212,7 @@ def _stream_agent_response(payload):
             stream=True,
             timeout=60,
         )
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
         return False, f"❌ Network error: {e}"
 
     if response.status_code != 200:
@@ -216,10 +226,11 @@ def _stream_agent_response(payload):
             continue
 
         line = raw_line.strip()
+
         if line.startswith("data:"):
             line = line[len("data:") :].strip()
 
-        if not line or line == "[DONE]":
+        if line in ("", "[DONE]"):
             continue
 
         text_piece = _extract_text_from_stream_payload(line)
@@ -232,64 +243,58 @@ def _stream_agent_response(payload):
     print()
 
     combined = "".join(reply_parts).strip()
+
     if combined:
-        return True, combined
-    return False, "⚠️ Agent didn’t send stream chunks."
+        # === ★ 修复 emoji 乱码 ===
+        return True, fix_utf8_garbled(combined)
+
+    return False, "⚠️ Agent didn’t send valid answer content."
 
 
 def _extract_text_from_stream_payload(payload_str: str) -> Optional[str]:
     try:
-        payload_json = json.loads(payload_str)
+        payload = json.loads(payload_str)
     except json.JSONDecodeError:
-        # 保留原文本作为兜底，避免丢失真正的内容
-        return payload_str
-
-    # Try typical Coze message schema
-    msg_type = payload_json.get("msg_type")
-    if msg_type and msg_type not in {"answer"}:
         return None
 
-    message = payload_json.get("message")
-    if isinstance(message, dict):
-        if message.get("type") and message.get("type") != "answer":
-            return None
-        content = message.get("content")
-        if isinstance(content, str) and content:
-            return content
-        if isinstance(content, list):
-            pieces = []
-            for block in content:
-                if isinstance(block, dict) and block.get("type") == "text":
-                    pieces.append(block.get("text", ""))
-                elif isinstance(block, str):
-                    pieces.append(block)
-            return "".join(pieces).strip() or None
+    msg_type = payload.get("msg_type")
+    if msg_type and msg_type != "answer":
+        return None
 
-    # Fallback to looking for generic text fields.
-    for key in ("content", "text", "delta"):
-        value = payload_json.get(key)
-        if isinstance(value, str) and value.strip():
-            return value
-        if isinstance(value, dict):
-            inner_text = value.get("content") or value.get("text")
-            if isinstance(inner_text, str) and inner_text.strip():
-                return inner_text
+    message = payload.get("message")
+    if not isinstance(message, dict):
+        return None
 
-    if isinstance(payload_json, str):
-        return payload_json
+    if message.get("type") != "answer":
+        return None
+
+    content = message.get("content")
+
+    if isinstance(content, str):
+        return fix_utf8_garbled(content)
+
+    if isinstance(content, list):
+        final_text = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                t = block.get("text", "").strip()
+                if t:
+                    final_text.append(t)
+        return fix_utf8_garbled("".join(final_text).strip())
 
     return None
 
-# === 6️⃣ 保存聊天记录 ===
+
+# === 6️⃣ 保存聊天记录到本地文件 ===
 def save_chat_log(user_input, agent_reply):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open("chat_history.txt", "a", encoding="utf-8") as f:
         f.write(f"[{timestamp}]\nYou: {user_input}\nAgent: {agent_reply}\n\n")
 
+
 # === 7️⃣ 主循环 ===
 if __name__ == "__main__":
     print("💬 Coze Health Agent")
-    # 输入 exit 或 quit 结束会话
 
     while True:
         try:
@@ -303,15 +308,13 @@ if __name__ == "__main__":
                 continue
 
             reply, streamed = call_agent(user_input, stream=True)
+
             if not streamed:
                 print(f"Agent: {reply}\n")
             else:
                 print()
 
-            # 朗读回复
             synthesize_speech(reply)
-
-            # 保存聊天记录
             save_chat_log(user_input, reply)
 
         except KeyboardInterrupt:
