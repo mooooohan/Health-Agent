@@ -5,6 +5,7 @@ Coze API 服务启动+接口示例脚本
 1. 开发者快速启动服务并测试功能；
 2. 给项目对接同学（前端/后端）提供清晰的接口调用示例；
 3. 验证服务端所有核心接口可用性。
+新增：文本转语音接口调用示例
 """
 import os
 import sys
@@ -26,6 +27,8 @@ DEFAULT_PORT = 6001
 API_BASE_URL = f"http://{DEFAULT_HOST}:{DEFAULT_PORT}"
 # 测试用户信息（模拟真实用户）
 TEST_USER_ID = "user_demo_10086"
+# 测试TTS配置（对接同学需替换为有效参数）
+TEST_VOICE_ID = "7426725529681657907"  # 替换为Coze有效音色ID
 # 等待服务启动的最大时间（秒）
 MAX_WAIT_SECONDS = 30  # 延长至30秒
 # 接口调用超时时间（秒）
@@ -202,7 +205,7 @@ def demo_sync_chat():
     api_url = f"{API_BASE_URL}/chat"
     request_data = {
         "user_id": TEST_USER_ID,
-        "message": "我是一名学生，最近考试压力很大，晚上睡不着觉，该怎么调节？",
+        "message": "I met a handsome boy just now.",
         # 可选：传入session_id（已有会话）或conversation_id（续传Coze会话）
         # "session_id": "xxx",
         # "conversation_id": "xxx"
@@ -236,14 +239,14 @@ print("响应结果：", response.json())
         print(f"  Coze会话ID（conversation_id）：{Fore.YELLOW}{response.data['conversation_id']}")
         print(f"  助手回复：{response.data['response']}")
         # 保存会话ID，供后续示例使用
-        return response.data["session_id"], response.data["conversation_id"]
+        return response.data["session_id"], response.data["conversation_id"], response.data["response"]  # 新增返回回复文本
     else:
         print(f"{Fore.RED}[❌ 响应失败：{response.error_msg}]{Style.RESET_ALL}")
         print(f"{Fore.YELLOW}[ℹ️  排查步骤：]")
         print(f"  1. 检查api_server.py中Coze API配置是否正确（如密钥、endpoint）；")
         print(f"  2. 确认网络能访问Coze API；")
         print(f"  3. 尝试延长API_TIMEOUT时间（在脚本顶部配置项）。")
-        return None, None
+        return None, None, None  # 新增返回值
 
 def demo_stream_chat(session_id: str, conversation_id: str):
     """示例2：流式聊天（实时返回回复片段，适合长文本场景）"""
@@ -255,7 +258,7 @@ def demo_stream_chat(session_id: str, conversation_id: str):
         "user_id": TEST_USER_ID,
         "session_id": session_id,  # 复用同步聊天的session_id，续传上下文
         "conversation_id": conversation_id,  # 复用Coze会话ID
-        "message": "你能具体说说时间管理的方法吗？比如怎么平衡复习和休息？"
+        "message": "I am hurted by a friend."
     }
     
     # 2. 打印调用示例（给对接同学复制用）
@@ -330,8 +333,10 @@ for line in response.iter_lines():
                         print(f"\n{Fore.RED}[❌ 流式错误：{data['data']['message']}]{Style.RESET_ALL}")
                 except json.JSONDecodeError:
                     print(f"\n{Fore.RED}[❌ 解析流式响应失败：{line}]{Style.RESET_ALL}")
+        return full_content  # 新增返回完整回复文本
     except Exception as e:
         print(f"\n{Fore.RED}[❌ 流式调用失败：{str(e)}]{Style.RESET_ALL}")
+        return None  # 新增返回值
 
 def demo_bind_conversation(session_id: str, new_conversation_id: Optional[str] = None):
     """示例3：绑定会话ID（手动关联session_id和conversation_id）"""
@@ -494,6 +499,90 @@ except requests.exceptions.RequestException as e:
     else:
         print(f"{Fore.RED}[❌ 未按预期返回错误，结果：{response.data or response.error_msg}]{Style.RESET_ALL}")
 
+# -------------------- 新增示例7：文本转语音 --------------------
+def demo_text_to_speech(tts_text: str):
+    """示例7：文本转语音（适合语音回复/音频下载场景）"""
+    print_title("文本转语音（适合语音回复/音频下载场景）")
+    
+    # 1. 接口信息
+    api_url = f"{API_BASE_URL}/text-to-speech"
+    request_data = {
+        "input": tts_text,  # 使用聊天回复作为TTS文本（模拟真实场景）
+        "voice_id": TEST_VOICE_ID,
+        "emotion": "neutral",  # 中性情感
+        "emotion_scale": 3.0  # 中等情感强度
+    }
+    
+    # 提前定义output_path（修复核心：确保变量始终有定义）
+    output_path = "tts_demo_output.mp3"
+    
+    # 2. 打印调用示例（给对接同学复制用）
+    code_example = f"""
+import requests
+import os
+
+API_BASE_URL = "{API_BASE_URL}"
+request_data = {json.dumps(request_data, ensure_ascii=False, indent=2)}
+
+# TTS接口返回音频流，需流式保存
+response = requests.post(
+    f"{API_BASE_URL}/text-to-speech",
+    json=request_data,
+    stream=True,  # 关键：启用流式响应
+    timeout=60
+)
+
+# 保存为MP3文件
+output_path = "tts_demo_output.mp3"
+with open(output_path, "wb") as f:
+    for chunk in response.iter_content(chunk_size=1024):
+        if chunk:
+            f.write(chunk)
+
+print(f"音频文件保存成功：{os.path.abspath(output_path)}")
+# 前端可直接用 <audio src="接口地址" controls> 播放，无需保存
+"""
+    print(f"{Fore.BLUE}[📋 对接示例代码（可直接复制）]{Style.RESET_ALL}")
+    print_code_block(code_example)
+    
+    # 3. 实际调用并保存音频
+    print(f"\n{Fore.BLUE}[🚀 发起文本转语音请求...（超时时间：60秒）]{Style.RESET_ALL}")
+    print(f"  转换文本：{tts_text[:50]}...")
+    print(f"  音色ID：{TEST_VOICE_ID}")
+    print(f"  情感配置：neutral（中性），强度：3.0")
+    
+    try:
+        response = requests.post(
+            api_url,
+            json=request_data,
+            stream=True,
+            timeout=60
+        )
+        response.raise_for_status()
+        
+        # 保存音频文件（使用提前定义的output_path）
+        with open(output_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=1024):
+                if chunk:
+                    f.write(chunk)
+        
+        print(f"{Fore.GREEN}[✅ 文本转语音成功！]{Style.RESET_ALL}")
+        print(f"  音频文件路径：{os.path.abspath(output_path)}")
+        print(f"  任务ID：{response.headers.get('X-Task-Id', '未知')}")
+        print(f"  音频大小：{os.path.getsize(output_path)} 字节")
+        print(f"  💡 提示：前端可直接用 <audio src='{api_url}' controls> 播放，无需本地保存")
+    except Exception as e:
+        print(f"{Fore.RED}[❌ TTS调用失败：{str(e)}]{Style.RESET_ALL}")
+        # 移除可能的空文件
+        if os.path.exists(output_path):
+            os.remove(output_path)
+            print(f"{Fore.YELLOW}[ℹ️  已清理空音频文件]{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}[ℹ️  排查步骤：]")
+        print(f"  1. 确认COZE_API_TOKEN已开通createSpeech权限；")
+        print(f"  2. 确认voice_id是有效值（通过Coze音色列表API获取）；")
+        print(f"  3. 文本UTF-8编码后≤1024字节，避免超长；")
+        print(f"  4. 确认网络能访问Coze TTS API（api.coze.cn）。")
+
 # ==================== 主流程 ====================
 def main():
     # 先声明全局变量
@@ -512,7 +601,7 @@ def main():
     
     # 步骤1：启动服务（修复解包错误，函数始终返回元组）
     print(f"{Fore.GREEN}{'='*80}")
-    print(f"Coze API 服务启动+接口示例脚本（Windows优化版）")
+    print(f"Coze API 服务启动+接口示例脚本（Windows优化版，支持文本转语音）")
     print(f"{'='*80}{Style.RESET_ALL}")
     service_started, proc = start_api_server(port=DEFAULT_PORT, debug=args.debug)
     if not service_started:
@@ -520,15 +609,15 @@ def main():
     
     # 步骤2：执行接口示例（按业务流程顺序）
     try:
-        # 示例1：同步聊天（获取session_id和conversation_id）
-        session_id, conversation_id = demo_sync_chat()
+        # 示例1：同步聊天（获取session_id、conversation_id和回复文本）
+        session_id, conversation_id, sync_reply = demo_sync_chat()
         if not session_id or not conversation_id:
             print(f"\n{Fore.RED}[❌ 同步聊天失败，后续示例无法执行]{Style.RESET_ALL}")
             proc.terminate()  # 终止服务进程
             sys.exit(1)
         
-        # 示例2：流式聊天（复用同步聊天的会话ID，续传上下文）
-        demo_stream_chat(session_id, conversation_id)
+        # 示例2：流式聊天（获取完整回复文本，用于TTS）
+        stream_reply = demo_stream_chat(session_id, conversation_id)
         
         # 示例3：绑定会话ID（模拟多端共享）
         demo_bind_conversation(session_id, conversation_id)
@@ -536,10 +625,16 @@ def main():
         # 示例4：查询会话信息
         demo_query_session(session_id)
         
-        # 示例5：清除会话
+        # 示例5：文本转语音（使用同步聊天的回复作为TTS文本）
+        if sync_reply:
+            demo_text_to_speech(sync_reply)
+        else:
+            print(f"\n{Fore.YELLOW}[ℹ️  同步聊天无回复文本，跳过TTS示例]{Style.RESET_ALL}")
+        
+        # 示例6：清除会话
         demo_clear_session(session_id)
         
-        # 示例6：错误场景 - 无效conversation_id
+        # 示例7：错误场景 - 无效conversation_id
         demo_invalid_conversation_id()
         
         # 所有示例完成
@@ -549,7 +644,8 @@ def main():
         print(f"  1. 接口文档：{API_BASE_URL}/docs（Swagger UI，含参数详情）")
         print(f"  2. 对接参考：直接复制示例中的代码块到项目中使用")
         print(f"  3. 会话管理：保存每次响应的 session_id 和 conversation_id，用于续传")
-        print(f"  4. 错误处理：捕获400（参数错误）、500（服务错误）、超时（网络问题）")
+        print(f"  4. 文本转语音：支持流式返回MP3，前端可直接播放或下载")
+        print(f"  5. 错误处理：捕获400（参数错误）、500（服务错误）、超时（网络问题）")
         print(f"{'='*80}{Style.RESET_ALL}")
         
         # 保持服务运行（按Ctrl+C终止）

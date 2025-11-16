@@ -17,11 +17,23 @@
 
 ### 基础信息
 
-- **版本**: 1.1.0
+- **版本**: 1.2.0
 - **基础URL**: `http://localhost:6001`
 - **API文档**: `http://localhost:6001/docs`
 - **协议**: HTTP/1.1 + SSE
 - **数据格式**: JSON
+
+### 核心功能
+
+- 🤖 **智能对话**: 基于Coze API的自然语言理解和生成
+- 🔄 **流式输出**: 支持Server-Sent Events (SSE) 实时流式响应
+- 💬 **多轮对话**: 自动维护会话上下文，支持连续对话
+- 🔗 **会话续传**: 支持conversation_id续传现有会话
+- 🎯 **会话绑定**: 自动管理session_id与conversation_id的映射关系
+- 📊 **会话管理**: 提供会话查询、清除等管理功能
+- 🛡️ **错误处理**: 完善的异常处理和日志记录
+- 📖 **自动文档**: Swagger/OpenAPI自动生成接口文档
+- 🗣️ **文本转语音**: 将文本转换为高质量的音频文件，支持多种音色和情感设置
 
 ---
 
@@ -177,9 +189,72 @@ curl -X POST "http://localhost:6001/chat/stream" \
 
 ---
 
-### 3. 会话管理接口
+### 3. 文本转语音接口
 
-#### 3.1 获取会话信息
+#### 3.1 文本转语音
+
+- **接口**: `POST /text-to-speech`
+- **描述**: 将文本转换为高质量的MP3音频文件
+- **请求头**:
+
+```
+Content-Type: application/json
+```
+
+- **请求体**:
+
+```json
+{
+    "input": "你好，我是你的人工智能助手",   // 必填，合成语音的文本（UTF-8编码，≤1024字节）
+    "voice_id": "7426725529681657907"     // 可选，音色ID（需通过音色列表API获取可用值）
+    "emotion": "neutral",                 // 可选，情感类型（happy/sad/angry/surprised/fear/hate/excited/coldness/neutral）
+    "emotion_scale": 3.0                  // 可选，情感强度（1.0~5.0，数值越高情感越强烈）
+}
+```
+
+- **响应类型**: `audio/mpeg`（MP3音频流）
+
+- **curl示例**:
+
+```bash
+curl -X POST "http://localhost:6001/text-to-speech" \
+     -H "Content-Type: application/json" \
+     -d '{"input": "你好，我是你的人工智能助手", "voice_id": "7426725529681657907"}' \
+     --output output.mp3
+```
+
+- **响应示例**:
+
+```json
+{
+    "task_id": "tts_task_abc123def456",
+    "voice_id": "7426725529681657907",
+    "text_length": 20,
+    "audio_format": "mp3",
+    "timestamp": "2024-01-15T10:35:00.123456"
+}
+```
+
+- **响应头**:
+
+```
+Content-Type: audio/mpeg
+X-Task-Id: tts_task_abc123def456
+```
+
+- **错误响应示例**:
+
+```json
+{
+    "detail": "文本转语音失败: 输入文本UTF-8编码后长度为1500字节，超过最大限制1024字节"
+}
+```
+
+---
+
+### 4. 会话管理接口
+
+#### 4.1 获取会话信息
 
 - **接口**: `GET /session/{session_id}/info`
 - **描述**: 获取指定会话的详细信息
@@ -205,7 +280,7 @@ curl -X POST "http://localhost:6001/chat/stream" \
 curl "http://localhost:6001/session/my_session/info"
 ```
 
-#### 3.2 清除会话
+#### 4.2 清除会话
 
 - **接口**: `POST /session/{session_id}/clear`
 - **描述**: 清除指定会话的历史记录
@@ -279,6 +354,31 @@ class CozeChatClient:
                         print("\n")
                         break
         return full_content
+    
+    def text_to_speech(self, text, voice_id=None, emotion=None, emotion_scale=4.0, output_path=None):
+        """文本转语音"""
+        url = f"{self.base_url}/text-to-speech"
+        data = {
+            "input": text,
+            "emotion": emotion,
+            "emotion_scale": emotion_scale
+        }
+        if voice_id:
+            data["voice_id"] = voice_id
+        
+        # 获取音频流
+        response = requests.post(url, json=data, stream=True)
+        response.raise_for_status()
+        
+        # 保存为文件或返回音频流
+        if output_path:
+            with open(output_path, "wb") as f:
+                for chunk in response.iter_content(chunk_size=1024):
+                    if chunk:
+                        f.write(chunk)
+            return output_path
+        else:
+            return response.content
 
 # 使用示例
 client = CozeChatClient()
@@ -289,6 +389,10 @@ print(f"回复: {result['response']}")
 
 # 流式聊天
 client.chat_stream("能给我一些缓解压力的建议吗？")
+
+# 文本转语音
+audio_path = client.text_to_speech("今天天气很好", output_path="output.mp3")
+print(f"音频文件保存到: {audio_path}")
 ```
 
 ---
@@ -420,6 +524,38 @@ SERVER_CONFIG = {
    ```
    **解决方案**: 增加请求超时时间或检查网络连接
 
+4. **文本转语音错误**
+
+#### 4.1 文本过长
+   ```
+   {"detail": "文本转语音失败: 输入文本UTF-8编码后长度为1500字节，超过最大限制1024字节"}
+   ```
+   **解决方案**: 缩短输入文本长度，或分段转换文本
+
+#### 4.2 无效音色ID
+   ```
+   {"detail": "文本转语音失败: 音色ID 'invalid_voice_id' 无效"}
+   ```
+   **解决方案**: 使用有效的音色ID，可通过Coze音色列表API获取
+
+#### 4.3 情感设置无效
+   ```
+   {"detail": "文本转语音失败: 无效的情感类型 'unknown'，支持的枚举值：happy, sad, angry, surprised, fear, hate, excited, coldness, neutral"}
+   ```
+   **解决方案**: 使用指定的情感枚举值之一
+
+#### 4.4 情感强度超出范围
+   ```
+   {"detail": "文本转语音失败: 情感强度需在 1.0~5.0 之间"}
+   ```
+   **解决方案**: 将emotion_scale参数设置为1.0~5.0之间的值
+
+#### 4.5 权限不足
+   ```
+   {"detail": "文本转语音失败: 访问被拒绝"}
+   ```
+   **解决方案**: 确保COZE_API_TOKEN已开通createSpeech权限（在Coze平台令牌管理中检查）
+
 ---
 
 ## 性能优化
@@ -435,6 +571,8 @@ SERVER_CONFIG = {
 - 自动管理会话映射和清理
 - 流式响应减少内存占用
 - 请求限流避免API调用过频
+- TTS服务采用流式传输，提高响应速度
+- 音频文件及时释放内存资源
 
 ### 监控建议
 
@@ -497,9 +635,57 @@ requests.post(url, json=data, timeout=60)
 response = requests.post(url, json=data, stream=True, timeout=None)
 ```
 
+### 5. TTS使用建议
+
+```python
+# 文本分段转换长文本
+def tts_long_text(text, chunk_size=200):
+    """将长文本分段转换为音频"""
+    words = text.split()
+    chunks = []
+    current_chunk = ""
+    
+    for word in words:
+        if len(current_chunk + word) > chunk_size:
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+            current_chunk = word
+        else:
+            current_chunk += " " + word
+    
+    if current_chunk:
+        chunks.append(current_chunk.strip())
+    
+    audio_files = []
+    for i, chunk in enumerate(chunks):
+        audio_path = client.text_to_speech(chunk, output_path=f"chunk_{i}.mp3")
+        audio_files.append(audio_path)
+    
+    return audio_files
+
+# 自定义语音参数
+def tts_with_emotion(text, emotion="happy", scale=4.0):
+    """使用情感参数进行TTS"""
+    return client.text_to_speech(
+        text=text,
+        emotion=emotion,
+        emotion_scale=scale,
+        output_path="emotional_speech.mp3"
+    )
+```
+
 ---
 
 ## 更新日志
+
+### v1.2.0 (2024-01-20)
+
+- 🎉 新增文本转语音（TTS）功能
+- ✨ 支持多种情感语音合成（快乐、悲伤、愤怒、惊讶等）
+- 🔧 支持自定义音色和情感强度
+- 📖 完善TTS相关错误处理文档
+- 🚀 优化音频流处理性能
+- 🛡️ 增加TTS使用最佳实践指南
 
 ### v1.0.0 (2024-01-15)
 
@@ -522,5 +708,5 @@ response = requests.post(url, json=data, stream=True, timeout=None)
 
 ---
 
-*本文档版本: v1.0.0*  
-*最后更新: 2024年1月15日*
+*本文档版本: v1.2.0*  
+*最后更新: 2024年1月20日*

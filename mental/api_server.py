@@ -1,60 +1,62 @@
-#!/usr/bin/env python3
-"""
-Coze聊天机器人API服务器（最终适配版）
-基于FastAPI，封装CozeAPIClient，提供RESTful API接口
-支持手动传入conversation_id续传会话，完善会话管理功能
-"""
-
 import json
-import logging
-import os
+import ssl
 import uuid
 from datetime import datetime
-from typing import Optional, Dict, Any
-
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
-from pydantic import BaseModel, Field
+import os
+from typing import Optional, AsyncGenerator, Dict, Any, List
 from contextlib import asynccontextmanager
 
-# 导入Coze客户端（确保coze_api_client.py在同一目录）
-from coze_api_client import CozeAPIClient
-# 导入配置（确保config.py在同一目录）
+import requests
+from fastapi import FastAPI, HTTPException, Query, Path, Depends, Request
+from fastapi.responses import StreamingResponse, JSONResponse
+from pydantic import BaseModel, Field
+from requests.adapters import HTTPAdapter
+from urllib3.poolmanager import PoolManager
+
+# 假设从配置模块导入服务器配置
 from config import SERVER_CONFIG
+import logging
 
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("logs/api_server.log", encoding='utf-8')
-    ]
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler()]
 )
+logger = logging.getLogger("api_server")
 
-logger = logging.getLogger(__name__)
+# 假设从coze客户端模块导入
+from coze_api_client import CozeAPIClient
+from coze_tts_client import CozeTTSClient  # 新增TTS客户端导入
 
-# 全局变量存储应用状态
-app_state = {}
+# 从coze_tts_client获取默认voice_id（使用测试代码中的默认值）
+from coze_tts_client import TEST_VOICE_ID  # 新增导入默认音色ID
 
+# 全局应用状态存储
+app_state: Dict[str, Any] = {}
+
+# ==================== 应用生命周期管理 ====================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
-    # 启动时初始化
     logger.info("正在初始化Coze聊天机器人API服务器...")
     
     try:
-        # 初始化Coze客户端（无参数，自动从.env加载配置）
-        coze_client = CozeAPIClient(debug=SERVER_CONFIG.get("debug", False))
+        # 初始化Coze聊天客户端
+        coze_chat_client = CozeAPIClient(debug=SERVER_CONFIG.get("debug", False))
         
-        # 保存到应用状态：key为session_id，value为{user_id, conversation_id, last_activity}
-        app_state["coze_client"] = coze_client
+        # 初始化Coze TTS客户端
+        coze_tts_client = CozeTTSClient(debug=SERVER_CONFIG.get("debug", False))
+        
+        # 保存到应用状态
+        app_state["coze_chat_client"] = coze_chat_client  # 重命名为明确的聊天客户端
+        app_state["coze_tts_client"] = coze_tts_client    # 新增TTS客户端
         app_state["session_map"] = {}  # session_id -> 会话信息映射
         app_state["conv_map"] = {}     # conversation_id -> session_id映射（反向查找）
         
         logger.info("Coze聊天机器人API服务器初始化完成")
-        logger.info(f"当前Bot ID: {coze_client.bot_id}")
+        logger.info(f"当前Bot ID: {coze_chat_client.bot_id}")
+        logger.info(f"默认TTS音色ID: {TEST_VOICE_ID}")  # 打印默认音色ID
         logger.info(f"服务器配置: {SERVER_CONFIG}")
         
         yield
@@ -68,24 +70,16 @@ async def lifespan(app: FastAPI):
         logger.error(f"初始化失败: {str(e)}", exc_info=True)
         raise
 
-# 创建FastAPI应用
+# 初始化FastAPI应用
 app = FastAPI(
-    title="Coze聊天机器人API",
-    description="基于Coze API的核心聊天机器人接口（支持同步/流式+会话续传）",
-    version="1.1.0",
+    title="Coze聊天机器人API服务",
+    description="提供聊天和文本转语音功能的API服务",
+    version="1.2.0",
     lifespan=lifespan
 )
 
-# 配置CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=SERVER_CONFIG.get("allowed_origins", ["*"]),
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 # ==================== Pydantic模型（数据校验）====================
+"""聊天消息请求（新增conversation_id参数）"""
 class ChatMessageRequest(BaseModel):
     """聊天消息请求（新增conversation_id参数）"""
     user_id: Optional[str] = Field(default=None, description="用户ID（可选，默认自动生成）")
@@ -93,6 +87,7 @@ class ChatMessageRequest(BaseModel):
     session_id: Optional[str] = Field(default=None, description="会话ID（可选，默认自动生成）")
     conversation_id: Optional[str] = Field(default=None, description="Coze会话ID（可选，传入则续传该会话）")
 
+"""同步聊天响应"""
 class ChatMessageResponse(BaseModel):
     """同步聊天响应"""
     response: str = Field(..., description="机器人完整回复")
@@ -101,11 +96,42 @@ class ChatMessageResponse(BaseModel):
     timestamp: str = Field(..., description="响应时间戳")
     conversation_id: str = Field(..., description="Coze会话ID（用于后续续传）")
 
+"""绑定会话ID请求"""
 class BindConversationRequest(BaseModel):
     """绑定会话ID请求"""
     conversation_id: str = Field(..., description="Coze会话ID（从聊天响应中获取）")
 
+# -------------------- 新增TTS相关Pydantic模型 --------------------
+"""文本转语音请求（匹配Coze官方API，使用默认voice_id）"""
+class TextToSpeechRequest(BaseModel):
+    """文本转语音请求（匹配Coze官方API）"""
+    input: str = Field(..., description="合成语音的文本（必填，UTF-8编码，≤1024字节）", min_length=1)
+    voice_id: Optional[str] = Field(
+        default=TEST_VOICE_ID,  # 使用默认音色ID
+        description=f"音色ID（可选，默认使用: {TEST_VOICE_ID}，需通过Coze音色列表API获取可用值）"
+    )
+    emotion: Optional[str] = Field(
+        default=None,
+        description="情感类型（可选，仅多情感音色支持，枚举值：happy/sad/angry/surprised/fear/hate/excited/coldness/neutral）"
+    )
+    emotion_scale: Optional[float] = Field(
+        default=4.0,
+        ge=1.0,
+        le=5.0,
+        description="情感强度（可选，1.0~5.0，数值越高情感越强烈，默认4.0）"
+    )
+
+"""文本转语音响应元数据（可选，用于同步返回场景）"""
+class TextToSpeechResponse(BaseModel):
+    """文本转语音响应元数据（可选，用于同步返回场景）"""
+    task_id: str = Field(..., description="语音生成任务ID（由服务端生成）")
+    voice_id: str = Field(..., description="使用的音色ID")
+    text_length: int = Field(..., description="输入文本UTF-8字节长度")
+    audio_format: str = Field(default="mp3", description="音频格式（Coze官方默认）")
+    timestamp: str = Field(..., description="响应时间戳")
+
 # ==================== 核心工具函数 ====================
+"""更新会话映射（双向绑定）"""
 def _update_session_mapping(session_id: str, user_id: str, conversation_id: str):
     """更新会话映射（双向绑定）"""
     # 移除旧的反向映射（如果该conversation_id已绑定其他session）
@@ -121,34 +147,52 @@ def _update_session_mapping(session_id: str, user_id: str, conversation_id: str)
     }
     app_state["conv_map"][conversation_id] = session_id
 
+"""通过session_id获取绑定的conversation_id"""
 def _get_conversation_id_by_session(session_id: str) -> Optional[str]:
     """通过session_id获取绑定的conversation_id"""
     session_info = app_state["session_map"].get(session_id)
     return session_info["conversation_id"] if session_info else None
 
+# -------------------- 新增TTS工具函数 --------------------
+"""生成唯一的TTS任务ID"""
+def _generate_tts_task_id() -> str:
+    """生成唯一的TTS任务ID"""
+    return f"tts_task_{uuid.uuid4().hex[:16]}"
+
 # ==================== API路由 ====================
+"""根路径健康提示"""
 @app.get("/")
 async def root():
     """根路径健康提示"""
     return {
         "message": "Coze聊天机器人API服务正在运行",
-        "version": "1.1.0",
+        "version": "1.2.0",
         "status": "healthy",
         "docs": "/docs",  # Swagger文档地址
-        "features": ["同步聊天", "流式聊天", "会话续传", "会话绑定", "上下文管理"]
+        "features": ["同步聊天", "流式聊天", "会话续传", "会话绑定", "上下文管理", "文本转语音"]
     }
 
+"""健康检查接口"""
 @app.get("/health")
 async def health_check():
     """健康检查接口"""
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "coze_client_status": "initialized" if app_state.get("coze_client") else "uninitialized",
+        "coze_chat_client_status": "initialized" if app_state.get("coze_chat_client") else "uninitialized",
+        "coze_tts_client_status": "initialized" if app_state.get("coze_tts_client") else "uninitialized",
         "active_sessions": len(app_state.get("session_map", {})),
-        "active_conversations": len(app_state.get("conv_map", {}))
+        "active_conversations": len(app_state.get("conv_map", {})),
+        "tts_support": "enabled" if app_state.get("coze_tts_client") else "disabled",
+        "default_voice_id": TEST_VOICE_ID  # 新增默认音色ID展示
     }
 
+"""
+    同步聊天接口（支持会话续传）
+    - 支持传入 conversation_id 续传已有会话
+    - 支持传入 session_id 关联已有会话
+    - 未传入则自动生成新会话
+    """
 @app.post("/chat", response_model=ChatMessageResponse)
 async def chat(request: ChatMessageRequest):
     """
@@ -159,9 +203,9 @@ async def chat(request: ChatMessageRequest):
     """
     try:
         # 获取客户端实例
-        coze_client = app_state.get("coze_client")
-        if not coze_client:
-            raise HTTPException(status_code=500, detail="Coze客户端未初始化")
+        coze_chat_client = app_state.get("coze_chat_client")
+        if not coze_chat_client:
+            raise HTTPException(status_code=500, detail="Coze聊天客户端未初始化")
         
         # 1. 处理用户ID和会话ID
         user_id = request.user_id or f"user_{uuid.uuid4().hex[:8]}"
@@ -173,22 +217,22 @@ async def chat(request: ChatMessageRequest):
         if request.conversation_id:
             # 传入了conversation_id，直接绑定
             target_conv_id = request.conversation_id
-            coze_client.set_conversation_id(target_conv_id)
+            coze_chat_client.set_conversation_id(target_conv_id)
             logger.info(f"同步聊天 - 手动传入会话ID: {target_conv_id[:15]}...")
         elif session_id in app_state["session_map"]:
             # 已有session_id绑定的conversation_id，自动续传
             target_conv_id = _get_conversation_id_by_session(session_id)
             if target_conv_id:
-                coze_client.set_conversation_id(target_conv_id)
+                coze_chat_client.set_conversation_id(target_conv_id)
                 logger.info(f"同步聊天 - 续传session绑定会话ID: {target_conv_id[:15]}...")
         
         logger.info(f"同步聊天请求 - session_id: {session_id}, user_id: {user_id}, message: {request.message[:50]}...")
         
         # 3. 调用Coze客户端（同步模式）
-        response_text = coze_client.send_message_sync(message=request.message)
+        response_text = coze_chat_client.send_message_sync(message=request.message)
         
         # 4. 获取实际使用的conversation_id（可能是新建或传入的）
-        actual_conv_id = coze_client.get_current_conversation_id()
+        actual_conv_id = coze_chat_client.get_current_conversation_id()
         if not actual_conv_id:
             raise Exception("Coze API未返回有效的conversation_id")
         
@@ -204,6 +248,7 @@ async def chat(request: ChatMessageRequest):
             timestamp=datetime.now().isoformat(),
             conversation_id=actual_conv_id  # 返回conversation_id，供后续续传
         )
+
     except ValueError as ve:
         # 捕获无效conversation_id的异常
         logger.error(f"同步聊天参数错误: {str(ve)}")
@@ -212,6 +257,12 @@ async def chat(request: ChatMessageRequest):
         logger.error(f"同步聊天处理失败: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"同步聊天失败: {str(e)}")
 
+"""
+    流式聊天接口（SSE格式，支持会话续传）
+    - 支持传入 conversation_id 续传已有会话
+    - 实时返回回复片段
+    - 响应格式：data: {"type": "chunk"/"complete"/"error", ...}
+    """
 @app.post("/chat/stream")
 async def chat_stream(request: ChatMessageRequest):
     """
@@ -235,20 +286,21 @@ async def chat_stream(request: ChatMessageRequest):
         async def stream_generator():
             """流式响应生成器（异步迭代）"""
             try:
-                coze_client = app_state.get("coze_client")
-                if not coze_client:
-                    raise Exception("Coze客户端未初始化")
+                coze_chat_client = app_state.get("coze_chat_client")
+                if not coze_chat_client:
+                    raise Exception("Coze聊天客户端未初始化")
                 
                 # 3. 绑定会话ID（续传逻辑）
                 actual_conv_id = None
+
                 if target_conv_id:
-                    coze_client.set_conversation_id(target_conv_id)
+                    coze_chat_client.set_conversation_id(target_conv_id)
                     actual_conv_id = target_conv_id
                     logger.info(f"流式聊天 - 手动绑定会话ID: {actual_conv_id[:15]}...")
                 elif use_existing_session:
                     actual_conv_id = _get_conversation_id_by_session(session_id)
                     if actual_conv_id:
-                        coze_client.set_conversation_id(actual_conv_id)
+                        coze_chat_client.set_conversation_id(actual_conv_id)
                         logger.info(f"流式聊天 - 续传会话ID: {actual_conv_id[:15]}...")
                 
                 # 4. 初始化会话映射（如果是新会话）
@@ -263,7 +315,7 @@ async def chat_stream(request: ChatMessageRequest):
                 full_content = ""
                 
                 # 5. 迭代Coze客户端的流式生成器
-                for stream_data in coze_client.send_message_stream(message=request.message):
+                for stream_data in coze_chat_client.send_message_stream(message=request.message):
                     stream_type = stream_data.get("type")
                     
                     # 内容块：实时返回
@@ -375,6 +427,11 @@ async def chat_stream(request: ChatMessageRequest):
         logger.error(f"流式聊天处理失败: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"流式聊天失败: {str(e)}")
 
+"""
+    绑定会话ID（手动关联session_id和conversation_id）
+    - 用于已有conversation_id时，绑定到指定session_id
+    - 绑定后，该session_id的后续聊天会自动续传该conversation_id
+    """
 @app.post("/session/{session_id}/bind")
 async def bind_conversation(session_id: str, request: BindConversationRequest):
     """
@@ -383,13 +440,13 @@ async def bind_conversation(session_id: str, request: BindConversationRequest):
     - 绑定后，该session_id的后续聊天会自动续传该conversation_id
     """
     try:
-        coze_client = app_state.get("coze_client")
-        if not coze_client:
-            raise HTTPException(status_code=500, detail="Coze客户端未初始化")
+        coze_chat_client = app_state.get("coze_chat_client")
+        if not coze_chat_client:
+            raise HTTPException(status_code=500, detail="Coze聊天客户端未初始化")
         
         conversation_id = request.conversation_id
         # 校验conversation_id有效性（调用coze_client的校验逻辑）
-        coze_client.set_conversation_id(conversation_id)
+        coze_chat_client.set_conversation_id(conversation_id)
         
         # 获取用户ID（如果session已存在则复用，否则自动生成）
         user_id = app_state["session_map"].get(session_id, {}).get("user_id") or f"user_{uuid.uuid4().hex[:8]}"
@@ -405,6 +462,7 @@ async def bind_conversation(session_id: str, request: BindConversationRequest):
             "conversation_id": conversation_id,
             "timestamp": datetime.now().isoformat()
         }
+
     except ValueError as ve:
         logger.error(f"会话绑定失败: {str(ve)}")
         raise HTTPException(status_code=400, detail=f"绑定失败: {str(ve)}")
@@ -412,6 +470,10 @@ async def bind_conversation(session_id: str, request: BindConversationRequest):
         logger.error(f"会话绑定失败 - session_id: {session_id}, error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"绑定失败: {str(e)}")
 
+"""
+    清除指定会话（重置上下文）
+    - 同时清除session_id与conversation_id的绑定关系
+    """
 @app.post("/session/{session_id}/clear")
 async def clear_session(session_id: str):
     """
@@ -419,12 +481,12 @@ async def clear_session(session_id: str):
     - 同时清除session_id与conversation_id的绑定关系
     """
     try:
-        coze_client = app_state.get("coze_client")
-        if not coze_client:
-            raise HTTPException(status_code=500, detail="Coze客户端未初始化")
+        coze_chat_client = app_state.get("coze_chat_client")
+        if not coze_chat_client:
+            raise HTTPException(status_code=500, detail="Coze聊天客户端未初始化")
         
         # 1. 清除客户端会话上下文
-        coze_client.clear_conversation()
+        coze_chat_client.clear_conversation()
         
         # 2. 清除双向映射
         session_info = app_state["session_map"].get(session_id)
@@ -447,6 +509,10 @@ async def clear_session(session_id: str):
         logger.error(f"清除会话失败 - session_id: {session_id}, error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"清除会话失败: {str(e)}")
 
+"""
+    获取会话详细信息
+    - 返回session_id、user_id、conversation_id、最后活动时间
+    """
 @app.get("/session/{session_id}/info")
 async def get_session_info(session_id: str):
     """
@@ -474,6 +540,10 @@ async def get_session_info(session_id: str):
         logger.error(f"获取会话信息失败 - session_id: {session_id}, error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"获取会话信息失败: {str(e)}")
 
+"""
+    通过conversation_id查询绑定的session_id
+    - 反向查找：已知conversation_id，获取对应的会话信息
+    """
 @app.get("/conversation/{conversation_id}/session")
 async def get_session_by_conversation(conversation_id: str):
     """
@@ -501,6 +571,10 @@ async def get_session_by_conversation(conversation_id: str):
         logger.error(f"查询会话失败 - conv_id: {conversation_id}, error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"查询会话失败: {str(e)}")
 
+"""
+    列出当前活跃的会话（分页）
+    - 仅返回基础信息，不包含历史消息
+    """
 @app.get("/sessions")
 async def list_sessions(limit: int = Query(10, ge=1, le=50), offset: int = Query(0, ge=0)):
     """
@@ -527,7 +601,72 @@ async def list_sessions(limit: int = Query(10, ge=1, le=50), offset: int = Query
         logger.error(f"列出会话失败: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"列出会话失败: {str(e)}")
 
+# -------------------- 新增文本转语音API路由 --------------------
+"""
+    调用Coze官方文本转语音API，流式返回MP3音频
+    - 文本限制：UTF-8编码≤1024字节，支持中英文
+    - 情感配置：仅多情感音色支持emotion参数，需参考Coze音色列表
+    - 响应格式：MP3音频流，前端可直接播放或下载
+    """
+@app.post("/text-to-speech", summary="文本转语音接口（Coze官方集成）")
+async def text_to_speech(request: TextToSpeechRequest):
+    """
+    调用Coze官方文本转语音API，流式返回MP3音频
+    - 文本限制：UTF-8编码≤1024字节，支持中英文
+    - 情感配置：仅多情感音色支持emotion参数，需参考Coze音色列表
+    - 响应格式：MP3音频流，前端可直接播放或下载
+    """
+    try:
+        # 1. 校验Coze TTS客户端
+        coze_tts_client = app_state.get("coze_tts_client")
+        if not coze_tts_client:
+            raise HTTPException(status_code=500, detail="Coze TTS客户端未初始化，无法调用TTS服务")
+        
+        # 2. 校验文本字节长度（UTF-8编码）
+        input_bytes = request.input.encode('utf-8')
+        if len(input_bytes) > 1024:
+            raise HTTPException(
+                status_code=400,
+                detail=f"输入文本过长：UTF-8编码后{len(input_bytes)}字节，最大支持1024字节"
+            )
+        
+        # 3. 生成任务ID
+        task_id = _generate_tts_task_id()
+        logger.info(f"TTS请求 - task_id: {task_id}, voice_id: {request.voice_id[:15]}..., text_length: {len(input_bytes)}字节")
+        
+        # 4. 调用Coze TTS客户端的text_to_speech方法（流式获取音频）
+        audio_stream = coze_tts_client.text_to_speech(
+            input=request.input,
+            voice_id=request.voice_id,  # 使用请求中的voice_id（默认已设置为TEST_VOICE_ID）
+            emotion=request.emotion,
+            emotion_scale=request.emotion_scale
+        )
+        
+        # 5. 构建流式响应（返回MP3音频）
+        return StreamingResponse(
+            audio_stream,
+            media_type="audio/mpeg",
+            headers={
+                "Content-Disposition": f"attachment; filename=\"tts_{task_id}.mp3\"",
+                "X-Task-Id": task_id,
+                "X-Voice-Id": request.voice_id,
+                "X-Text-Length": str(len(input_bytes)),
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive"
+            }
+        )
+    
+    except ValueError as ve:
+        logger.error(f"TTS参数错误 - task_id: {task_id if 'task_id' in locals() else 'unknown'}, error: {str(ve)}")
+        raise HTTPException(status_code=400, detail=f"参数错误：{str(ve)}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"TTS处理失败 - task_id: {task_id if 'task_id' in locals() else 'unknown'}, error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"文本转语音失败：{str(e)}")
+
 # ==================== 全局错误处理 ====================
+"""404错误处理"""
 @app.exception_handler(404)
 async def not_found_handler(request, exc):
     """404错误处理"""
@@ -541,6 +680,7 @@ async def not_found_handler(request, exc):
         }
     )
 
+"""500错误处理"""
 @app.exception_handler(500)
 async def server_error_handler(request, exc):
     """500错误处理"""
