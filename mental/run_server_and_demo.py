@@ -6,6 +6,7 @@ Coze API 服务启动+接口示例脚本
 2. 给项目对接同学（前端/后端）提供清晰的接口调用示例；
 3. 验证服务端所有核心接口可用性。
 新增：文本转语音接口调用示例
+新增：情绪分析接口调用示例
 """
 import os
 import sys
@@ -583,6 +584,85 @@ print(f"音频文件保存成功：{os.path.abspath(output_path)}")
         print(f"  3. 文本UTF-8编码后≤1024字节，避免超长；")
         print(f"  4. 确认网络能访问Coze TTS API（api.coze.cn）。")
 
+# -------------------- 新增示例8：情绪分析 --------------------
+def demo_emotion_analysis():
+    """示例8：情绪分析（为文本打上情绪标签）"""
+    print_title("情绪分析（为文本打上情绪标签）")
+    
+    # 1. 测试文本列表
+    test_texts = [
+        "I am going to the park with my friends long time no meet",
+        "I feel so sad and lonely today",
+        "This is the best day of my life!",
+        "I'm really angry about what happened",
+        "I don't know how to feel about this situation"
+    ]
+    
+    # 2. 接口信息
+    api_url = f"{API_BASE_URL}/emotion-analysis"
+    
+    # 3. 打印调用示例（给对接同学复制用）
+    code_example = f"""
+import requests
+
+API_BASE_URL = "{API_BASE_URL}"
+
+# 情绪分析请求示例
+request_data = {{
+    "text": "I feel so happy today!",
+    "user_id": "{TEST_USER_ID}"  # 可选
+}}
+
+response = requests.post(
+    f"{API_BASE_URL}/emotion-analysis",
+    json=request_data,
+    timeout=60
+)
+
+result = response.json()
+if result['success']:
+    print(f"情绪分析成功：")
+    print(f"  输入文本：{{result['input_text']}}")
+    print(f"  情绪标签：{{result['emotion_analysis']}}")
+    print(f"  Token使用量：{{result.get('token_usage', '未知')}}")
+else:
+    print(f"情绪分析失败：{{result['error']}}")
+"""
+    print(f"{Fore.BLUE}[📋 对接示例代码（可直接复制）]{Style.RESET_ALL}")
+    print_code_block(code_example)
+    
+    # 4. 实际调用并打印结果
+    print(f"\n{Fore.BLUE}[🚀 发起情绪分析请求...（测试{len(test_texts)}个文本样例）]{Style.RESET_ALL}")
+    
+    for i, text in enumerate(test_texts, 1):
+        print(f"\n{Fore.YELLOW}[📝 测试文本 {i}/{len(test_texts)}]{Style.RESET_ALL}")
+        print(f"  文本内容：{text}")
+        
+        request_data = {
+            "text": text,
+            "user_id": TEST_USER_ID
+        }
+        
+        response = send_request("POST", api_url, request_data)
+        
+        if response.success:
+            data = response.data
+            if data['success']:
+                print(f"  {Fore.GREEN}✅ 情绪标签：{data['emotion_analysis']}{Style.RESET_ALL}")
+                if data.get('token_usage'):
+                    print(f"  📊 Token使用量：{data['token_usage']}")
+            else:
+                print(f"  {Fore.RED}❌ 分析失败：{data.get('error', '未知错误')}{Style.RESET_ALL}")
+        else:
+            print(f"  {Fore.RED}❌ 请求失败：{response.error_msg}{Style.RESET_ALL}")
+    
+    print(f"\n{Fore.GREEN}[✅ 情绪分析示例完成]{Style.RESET_ALL}")
+    print(f"  💡 应用场景：")
+    print(f"    • 用户消息情感分析")
+    print(f"    • 客服对话情绪监控") 
+    print(f"    • 心理健康评估辅助")
+    print(f"    • 内容审核情感判断")
+
 # ==================== 主流程 ====================
 def main():
     # 先声明全局变量
@@ -601,7 +681,7 @@ def main():
     
     # 步骤1：启动服务（修复解包错误，函数始终返回元组）
     print(f"{Fore.GREEN}{'='*80}")
-    print(f"Coze API 服务启动+接口示例脚本（Windows优化版，支持文本转语音）")
+    print(f"Coze API 服务启动+接口示例脚本（Windows优化版，支持文本转语音和情绪分析）")
     print(f"{'='*80}{Style.RESET_ALL}")
     service_started, proc = start_api_server(port=DEFAULT_PORT, debug=args.debug)
     if not service_started:
@@ -631,10 +711,13 @@ def main():
         else:
             print(f"\n{Fore.YELLOW}[ℹ️  同步聊天无回复文本，跳过TTS示例]{Style.RESET_ALL}")
         
-        # 示例6：清除会话
+        # 示例6：情绪分析（新增功能演示）
+        demo_emotion_analysis()
+        
+        # 示例7：清除会话
         demo_clear_session(session_id)
         
-        # 示例7：错误场景 - 无效conversation_id
+        # 示例8：错误场景 - 无效conversation_id
         demo_invalid_conversation_id()
         
         # 所有示例完成
@@ -645,7 +728,8 @@ def main():
         print(f"  2. 对接参考：直接复制示例中的代码块到项目中使用")
         print(f"  3. 会话管理：保存每次响应的 session_id 和 conversation_id，用于续传")
         print(f"  4. 文本转语音：支持流式返回MP3，前端可直接播放或下载")
-        print(f"  5. 错误处理：捕获400（参数错误）、500（服务错误）、超时（网络问题）")
+        print(f"  5. 情绪分析：为文本打上情绪标签，支持心理健康等应用场景")
+        print(f"  6. 错误处理：捕获400（参数错误）、500（服务错误）、超时（网络问题）")
         print(f"{'='*80}{Style.RESET_ALL}")
         
         # 保持服务运行（按Ctrl+C终止）

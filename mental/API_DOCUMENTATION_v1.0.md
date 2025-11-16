@@ -1,8 +1,8 @@
-# Coze聊天机器人API接口文档 v1.0
+# Coze聊天机器人API接口文档 v1.3.0
 
 ## 概述
 
-基于Coze API的心理健康聊天机器人API服务，提供同步和流式两种聊天模式，支持会话管理、上下文维护和conversation_id续传功能。
+基于Coze API的心理健康聊天机器人API服务，提供同步和流式两种聊天模式，支持会话管理、上下文维护和conversation_id续传功能，新增情绪标签识别和文本转语音功能。
 
 ### 核心特性
 
@@ -14,10 +14,12 @@
 - 📊 **会话管理**: 提供会话查询、清除等管理功能
 - 🛡️ **错误处理**: 完善的异常处理和日志记录
 - 📖 **自动文档**: Swagger/OpenAPI自动生成接口文档
+- 🧠 **情绪分析**: 智能识别文本中的情绪标签，支持置信度评估
+- 🗣️ **文本转语音**: 将文本转换为高质量的音频文件，支持多种音色和情感设置
 
 ### 基础信息
 
-- **版本**: 1.2.0
+- **版本**: 1.3.0
 - **基础URL**: `http://localhost:6001`
 - **API文档**: `http://localhost:6001/docs`
 - **协议**: HTTP/1.1 + SSE
@@ -33,6 +35,7 @@
 - 📊 **会话管理**: 提供会话查询、清除等管理功能
 - 🛡️ **错误处理**: 完善的异常处理和日志记录
 - 📖 **自动文档**: Swagger/OpenAPI自动生成接口文档
+- 🧠 **情绪分析**: 智能识别文本中的情绪标签，支持置信度评估
 - 🗣️ **文本转语音**: 将文本转换为高质量的音频文件，支持多种音色和情感设置
 
 ---
@@ -109,9 +112,16 @@ curl http://localhost:6001/health
 ```json
 {
     "message": "Coze聊天机器人API服务正在运行",
-    "version": "1.0.0",
+    "version": "1.3.0",
     "status": "healthy",
-    "docs": "/docs"
+    "docs": "/docs",
+    "features": {
+        "chat_sync": "同步聊天功能",
+        "chat_stream": "流式聊天功能",
+        "emotion_analysis": "情绪标签识别功能",
+        "text_to_speech": "文本转语音功能",
+        "session_management": "会话管理功能"
+    }
 }
 ```
 
@@ -189,9 +199,63 @@ curl -X POST "http://localhost:6001/chat/stream" \
 
 ---
 
-### 3. 文本转语音接口
+### 3. 情绪分析接口
 
-#### 3.1 文本转语音
+#### 3.1 情绪标签识别
+
+- **接口**: `POST /analyze-emotion`
+- **描述**: 分析文本中的情绪标签，基于Coze API进行智能情绪识别
+- **请求头**:
+
+```
+Content-Type: application/json
+```
+
+- **请求体**:
+
+```json
+{
+    "user_id": "user123",           // 可选，用户ID
+    "text": "我最近工作压力很大，感觉很焦虑",   // 必填，要分析的文本内容
+    "session_id": "demo_session_1"  // 可选，会话ID
+}
+```
+
+- **响应示例**:
+
+```json
+{
+    "emotion_tags": ["焦虑", "压力", "疲惫"],
+    "confidence_scores": [0.85, 0.72, 0.65],
+    "analysis_result": "用户表达了工作压力相关的负面情绪，建议提供缓解压力的建议和心理支持",
+    "emotion_intensity": "中等",
+    "session_id": "demo_session_1",
+    "timestamp": "2024-01-20T14:30:00.123456"
+}
+```
+
+- **curl示例**:
+
+```bash
+curl -X POST "http://localhost:6001/analyze-emotion" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "text": "我今天心情很好，工作效率很高",
+       "session_id": "my_session"
+     }'
+```
+
+- **响应字段说明**:
+  - `emotion_tags`: 识别的情绪标签数组
+  - `confidence_scores`: 对应的置信度分数（0-1之间）
+  - `analysis_result`: 情绪分析结果描述
+  - `emotion_intensity`: 情绪强度（低/中等/高）
+  - `session_id`: 会话ID
+  - `timestamp`: 分析时间戳
+
+### 4. 文本转语音接口
+
+#### 4.1 文本转语音
 
 - **接口**: `POST /text-to-speech`
 - **描述**: 将文本转换为高质量的MP3音频文件
@@ -252,9 +316,9 @@ X-Task-Id: tts_task_abc123def456
 
 ---
 
-### 4. 会话管理接口
+### 5. 会话管理接口
 
-#### 4.1 获取会话信息
+#### 5.1 获取会话信息
 
 - **接口**: `GET /session/{session_id}/info`
 - **描述**: 获取指定会话的详细信息
@@ -280,7 +344,7 @@ X-Task-Id: tts_task_abc123def456
 curl "http://localhost:6001/session/my_session/info"
 ```
 
-#### 4.2 清除会话
+#### 5.2 清除会话
 
 - **接口**: `POST /session/{session_id}/clear`
 - **描述**: 清除指定会话的历史记录
@@ -355,6 +419,20 @@ class CozeChatClient:
                         break
         return full_content
     
+    def analyze_emotion(self, text, user_id=None, session_id=None):
+        """情绪分析"""
+        url = f"{self.base_url}/analyze-emotion"
+        data = {
+            "text": text,
+            "session_id": session_id
+        }
+        if user_id:
+            data["user_id"] = user_id
+        
+        response = requests.post(url, json=data)
+        response.raise_for_status()
+        return response.json()
+    
     def text_to_speech(self, text, voice_id=None, emotion=None, emotion_scale=4.0, output_path=None):
         """文本转语音"""
         url = f"{self.base_url}/text-to-speech"
@@ -389,6 +467,11 @@ print(f"回复: {result['response']}")
 
 # 流式聊天
 client.chat_stream("能给我一些缓解压力的建议吗？")
+
+# 情绪分析
+emotion_result = client.analyze_emotion("我最近工作压力很大，感觉很焦虑")
+print(f"情绪标签: {emotion_result['emotion_tags']}")
+print(f"分析结果: {emotion_result['analysis_result']}")
 
 # 文本转语音
 audio_path = client.text_to_speech("今天天气很好", output_path="output.mp3")
@@ -556,6 +639,38 @@ SERVER_CONFIG = {
    ```
    **解决方案**: 确保COZE_API_TOKEN已开通createSpeech权限（在Coze平台令牌管理中检查）
 
+5. **情绪分析错误**
+
+#### 5.1 输入文本为空
+   ```
+   {"detail": "情绪分析失败: 输入文本不能为空"}
+   ```
+   **解决方案**: 提供有效的文本内容进行分析
+
+#### 5.2 Coze API调用失败
+   ```
+   {"detail": "情绪分析失败: Coze API调用失败: 401 Unauthorized"}
+   ```
+   **解决方案**: 检查COZE_API_TOKEN是否正确，确保API密钥有效
+
+#### 5.3 文本过长
+   ```
+   {"detail": "情绪分析失败: 文本长度超过限制"}
+   ```
+   **解决方案**: 缩短输入文本或分段分析
+
+#### 5.4 响应格式错误
+   ```
+   {"detail": "情绪分析失败: 无法解析Coze API响应"}
+   ```
+   **解决方案**: 检查Coze API服务状态，稍后重试
+
+#### 5.5 网络超时
+   ```
+   {"detail": "情绪分析失败: 请求超时"}
+   ```
+   **解决方案**: 增加请求超时时间或检查网络连接
+
 ---
 
 ## 性能优化
@@ -678,6 +793,15 @@ def tts_with_emotion(text, emotion="happy", scale=4.0):
 
 ## 更新日志
 
+### v1.3.0 (2024-01-20)
+
+- 🎉 新增情绪标签识别功能
+- ✨ 基于Coze API的智能情绪分析
+- 🔧 支持情绪强度评估和置信度计算
+- 📖 完善情绪分析相关错误处理文档
+- 🚀 增加情绪分析最佳实践指南
+- 🛡️ 整合情绪分析与聊天功能，提供完整的心理健康服务
+
 ### v1.2.0 (2024-01-20)
 
 - 🎉 新增文本转语音（TTS）功能
@@ -708,5 +832,5 @@ def tts_with_emotion(text, emotion="happy", scale=4.0):
 
 ---
 
-*本文档版本: v1.2.0*  
+*本文档版本: v1.3.0*  
 *最后更新: 2024年1月20日*

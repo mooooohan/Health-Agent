@@ -32,6 +32,9 @@ from coze_tts_client import CozeTTSClient  # 新增TTS客户端导入
 # 从coze_tts_client获取默认voice_id（使用测试代码中的默认值）
 from coze_tts_client import TEST_VOICE_ID  # 新增导入默认音色ID
 
+# 新增：导入情绪分析功能
+from coze_emotiontag import EmotionAnalyzer
+
 # 全局应用状态存储
 app_state: Dict[str, Any] = {}
 
@@ -48,15 +51,20 @@ async def lifespan(app: FastAPI):
         # 初始化Coze TTS客户端
         coze_tts_client = CozeTTSClient(debug=SERVER_CONFIG.get("debug", False))
         
+        # 新增：初始化情绪分析器
+        emotion_analyzer = EmotionAnalyzer()
+        
         # 保存到应用状态
         app_state["coze_chat_client"] = coze_chat_client  # 重命名为明确的聊天客户端
         app_state["coze_tts_client"] = coze_tts_client    # 新增TTS客户端
+        app_state["emotion_analyzer"] = emotion_analyzer   # 新增情绪分析器
         app_state["session_map"] = {}  # session_id -> 会话信息映射
         app_state["conv_map"] = {}     # conversation_id -> session_id映射（反向查找）
         
         logger.info("Coze聊天机器人API服务器初始化完成")
         logger.info(f"当前Bot ID: {coze_chat_client.bot_id}")
         logger.info(f"默认TTS音色ID: {TEST_VOICE_ID}")  # 打印默认音色ID
+        logger.info(f"情绪分析功能: 已启用")  # 新增日志
         logger.info(f"服务器配置: {SERVER_CONFIG}")
         
         yield
@@ -73,8 +81,8 @@ async def lifespan(app: FastAPI):
 # 初始化FastAPI应用
 app = FastAPI(
     title="Coze聊天机器人API服务",
-    description="提供聊天和文本转语音功能的API服务",
-    version="1.2.0",
+    description="提供聊天、文本转语音和情绪分析功能的API服务",  # 更新描述
+    version="1.3.0",  # 更新版本号
     lifespan=lifespan
 )
 
@@ -130,6 +138,24 @@ class TextToSpeechResponse(BaseModel):
     audio_format: str = Field(default="mp3", description="音频格式（Coze官方默认）")
     timestamp: str = Field(..., description="响应时间戳")
 
+# -------------------- 新增情绪分析相关Pydantic模型 --------------------
+"""情绪分析请求"""
+class EmotionAnalysisRequest(BaseModel):
+    """情绪分析请求"""
+    text: str = Field(..., description="要分析情绪的文本内容", min_length=1)
+    user_id: Optional[str] = Field(default=None, description="用户ID（可选，默认自动生成）")
+
+"""情绪分析响应"""
+class EmotionAnalysisResponse(BaseModel):
+    """情绪分析响应"""
+    success: bool = Field(..., description="分析是否成功")
+    input_text: str = Field(..., description="输入的文本")
+    emotion_analysis: Optional[str] = Field(None, description="情绪分析结果")
+    error: Optional[str] = Field(None, description="错误信息（如果分析失败）")
+    status: Optional[str] = Field(None, description="分析状态")
+    token_usage: Optional[int] = Field(None, description="Token使用量")
+    timestamp: str = Field(..., description="响应时间戳")
+
 # ==================== 核心工具函数 ====================
 """更新会话映射（双向绑定）"""
 def _update_session_mapping(session_id: str, user_id: str, conversation_id: str):
@@ -166,10 +192,10 @@ async def root():
     """根路径健康提示"""
     return {
         "message": "Coze聊天机器人API服务正在运行",
-        "version": "1.2.0",
+        "version": "1.3.0",  # 更新版本号
         "status": "healthy",
         "docs": "/docs",  # Swagger文档地址
-        "features": ["同步聊天", "流式聊天", "会话续传", "会话绑定", "上下文管理", "文本转语音"]
+        "features": ["同步聊天", "流式聊天", "会话续传", "会话绑定", "上下文管理", "文本转语音", "情绪分析"]  # 新增情绪分析功能
     }
 
 """健康检查接口"""
@@ -181,9 +207,11 @@ async def health_check():
         "timestamp": datetime.now().isoformat(),
         "coze_chat_client_status": "initialized" if app_state.get("coze_chat_client") else "uninitialized",
         "coze_tts_client_status": "initialized" if app_state.get("coze_tts_client") else "uninitialized",
+        "emotion_analyzer_status": "initialized" if app_state.get("emotion_analyzer") else "uninitialized",  # 新增情绪分析器状态
         "active_sessions": len(app_state.get("session_map", {})),
         "active_conversations": len(app_state.get("conv_map", {})),
         "tts_support": "enabled" if app_state.get("coze_tts_client") else "disabled",
+        "emotion_analysis_support": "enabled" if app_state.get("emotion_analyzer") else "disabled",  # 新增情绪分析支持状态
         "default_voice_id": TEST_VOICE_ID  # 新增默认音色ID展示
     }
 
@@ -664,6 +692,55 @@ async def text_to_speech(request: TextToSpeechRequest):
     except Exception as e:
         logger.error(f"TTS处理失败 - task_id: {task_id if 'task_id' in locals() else 'unknown'}, error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"文本转语音失败：{str(e)}")
+
+# -------------------- 新增情绪分析API路由 --------------------
+"""
+    情绪分析接口
+    - 调用Coze API为输入文本打上情绪标签
+    - 返回情绪分析结果和详细信息
+    """
+@app.post("/emotion-analysis", response_model=EmotionAnalysisResponse, summary="情绪分析接口")
+async def emotion_analysis(request: EmotionAnalysisRequest):
+    """
+    情绪分析接口
+    - 调用Coze API为输入文本打上情绪标签
+    - 返回情绪分析结果和详细信息
+    """
+    try:
+        # 1. 校验情绪分析器
+        emotion_analyzer = app_state.get("emotion_analyzer")
+        if not emotion_analyzer:
+            raise HTTPException(status_code=500, detail="情绪分析器未初始化，无法调用情绪分析服务")
+        
+        # 2. 生成用户ID（如果未提供）
+        user_id = request.user_id or f"user_{uuid.uuid4().hex[:8]}"
+        
+        logger.info(f"情绪分析请求 - user_id: {user_id}, text: {request.text[:50]}...")
+        
+        # 3. 调用情绪分析器
+        result = emotion_analyzer.analyze_emotion(request.text, user_id)
+        
+        logger.info(f"情绪分析响应 - user_id: {user_id}, success: {result['success']}")
+        
+        # 4. 构建响应
+        return EmotionAnalysisResponse(
+            success=result['success'],
+            input_text=result['input_text'],
+            emotion_analysis=result.get('emotion_analysis'),
+            error=result.get('error'),
+            status=result.get('status'),
+            token_usage=result.get('token_usage'),
+            timestamp=datetime.now().isoformat()
+        )
+    
+    except ValueError as ve:
+        logger.error(f"情绪分析参数错误: {str(ve)}")
+        raise HTTPException(status_code=400, detail=f"参数错误: {str(ve)}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"情绪分析处理失败: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"情绪分析失败: {str(e)}")
 
 # ==================== 全局错误处理 ====================
 """404错误处理"""
